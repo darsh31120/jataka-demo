@@ -84,13 +84,22 @@ jobs:
             echo "Missing/empty JATAKA_INSTALLATION_ID after sanitization."
             exit 1
           fi
+          if ! printf '%s' "$INSTALLATION_ID" | grep -Eq '^[0-9]+$'; then
+            echo "JATAKA_INSTALLATION_ID must be numeric (got: '$INSTALLATION_ID')."
+            exit 1
+          fi
 
           REPO_FULL_NAME="${{ github.repository }}"
           BRANCH="${{ github.head_ref }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           TEST_MODE="${{ vars.JATAKA_TEST_MODE || 'auto' }}"
 
-          PAYLOAD="$(INSTALLATION_ID="$INSTALLATION_ID" REPO_FULL_NAME="$REPO_FULL_NAME" BRANCH="$BRANCH" PR_NUMBER="$PR_NUMBER" TEST_MODE="$TEST_MODE" python3 -c 'import json,os; print(json.dumps({"installation_id": os.environ["INSTALLATION_ID"], "repo_full_name": os.environ["REPO_FULL_NAME"], "branch": os.environ["BRANCH"], "pr_number": os.environ["PR_NUMBER"], "test_mode": os.environ["TEST_MODE"]}))')"
+          if ! printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'; then
+            echo "PR number must be numeric (got: '$PR_NUMBER')."
+            exit 1
+          fi
+
+          PAYLOAD="$(INSTALLATION_ID="$INSTALLATION_ID" REPO_FULL_NAME="$REPO_FULL_NAME" BRANCH="$BRANCH" PR_NUMBER="$PR_NUMBER" TEST_MODE="$TEST_MODE" python3 -c 'import json,os; installation_id=int(os.environ["INSTALLATION_ID"]); pr_number=int(os.environ["PR_NUMBER"]); print(json.dumps({"installation_id": installation_id, "repo_full_name": os.environ["REPO_FULL_NAME"], "branch": os.environ["BRANCH"], "pr_number": pr_number, "test_mode": os.environ["TEST_MODE"]}))')"
 
           curl --fail-with-body --show-error -X POST "$TARGET_URL" \
             -H "Authorization: Bearer $API_KEY" \
