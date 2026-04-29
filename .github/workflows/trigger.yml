@@ -7,118 +7,8 @@ on:
 permissions:
   contents: read
 
-env:
-  PILOT_BRANCH_PREFIX: scenario/
-  PILOT_TEST_MODE: backend
-  DEFAULT_TEST_MODE: auto
-
 jobs:
-  preflight:
-    name: Preflight Checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      test_mode: ${{ steps.resolve.outputs.test_mode }}
-      is_pilot: ${{ steps.resolve.outputs.is_pilot }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Validate required secrets
-        env:
-          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
-          JATAKA_API_URL: ${{ secrets.JATAKA_API_URL }}
-          JATAKA_API_KEY: ${{ secrets.JATAKA_API_KEY }}
-          JATAKA_INSTALLATION_ID: ${{ secrets.JATAKA_INSTALLATION_ID }}
-        run: |
-          missing=()
-          [[ -z "$SFDX_AUTH_URL" ]] && missing+=("SFDX_AUTH_URL")
-          [[ -z "$JATAKA_API_URL" ]] && missing+=("JATAKA_API_URL")
-          [[ -z "$JATAKA_API_KEY" ]] && missing+=("JATAKA_API_KEY")
-          [[ -z "$JATAKA_INSTALLATION_ID" ]] && missing+=("JATAKA_INSTALLATION_ID")
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::Missing required secrets: ${missing[*]}"
-            exit 1
-          fi
-          echo "All required secrets present."
-
-      - name: Lint workflow YAML
-        run: |
-          python3 -c "import yaml; yaml.safe_load(open('.github/workflows/trigger.yml'))"
-          echo "Workflow YAML parsed successfully."
-
-      - name: Shell script sanity check
-        run: |
-          set -e
-          for f in run-jataka.sh run-pmd.sh; do
-            if [ -f "$f" ]; then
-              bash -n "$f"
-              echo "Syntax OK: $f"
-            fi
-          done
-
-      - name: Resolve scenario test mode
-        id: resolve
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          REPO_VAR_TEST_MODE: ${{ vars.JATAKA_TEST_MODE }}
-        run: |
-          allowed_modes=("backend" "ui" "hybrid" "auto")
-          is_pilot="false"
-          if [[ "$HEAD_REF" == ${PILOT_BRANCH_PREFIX}* ]]; then
-            is_pilot="true"
-            test_mode="$PILOT_TEST_MODE"
-          elif [[ -n "$REPO_VAR_TEST_MODE" ]]; then
-            test_mode="$REPO_VAR_TEST_MODE"
-          else
-            test_mode="$DEFAULT_TEST_MODE"
-          fi
-          ok="false"
-          for m in "${allowed_modes[@]}"; do
-            if [[ "$m" == "$test_mode" ]]; then ok="true"; break; fi
-          done
-          if [[ "$ok" != "true" ]]; then
-            echo "::error::Resolved test_mode '$test_mode' is not in allowed list: ${allowed_modes[*]}"
-            exit 1
-          fi
-          {
-            echo "test_mode=$test_mode"
-            echo "is_pilot=$is_pilot"
-          } >> "$GITHUB_OUTPUT"
-          echo "Resolved test_mode=$test_mode (pilot=$is_pilot, branch=$HEAD_REF)"
-
-      - name: Validate trigger payload schema
-        env:
-          INSTALLATION_ID: ${{ secrets.JATAKA_INSTALLATION_ID }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.head_ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          TEST_MODE: ${{ steps.resolve.outputs.test_mode }}
-        run: |
-          python3 - <<'PY'
-          import json, os, sys
-          payload = {
-              "installation_id": os.environ["INSTALLATION_ID"],
-              "repo_full_name": os.environ["REPO"],
-              "branch": os.environ["BRANCH"],
-              "pr_number": os.environ["PR_NUMBER"],
-              "test_mode": os.environ["TEST_MODE"],
-          }
-          required = ["installation_id", "repo_full_name", "branch", "pr_number", "test_mode"]
-          missing = [k for k in required if not payload.get(k)]
-          if missing:
-              print(f"::error::Trigger payload missing or empty fields: {missing}")
-              sys.exit(1)
-          json.dumps(payload)
-          safe = {k: payload[k] for k in required if k != "installation_id"}
-          print("Trigger payload is valid:", json.dumps(safe))
-          PY
-
   trigger-jataka:
-    name: Deploy & Trigger Jataka
-    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -135,17 +25,6 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
 
-      - name: Ensure Salesforce DX project workspace
-        run: |
-          set -euo pipefail
-          echo "Workspace: $(pwd)"
-          ls -la
-          if [ ! -f sfdx-project.json ]; then
-            echo "sfdx-project.json missing in runner workspace. Creating fallback config."
-            python3 -c "import json; json.dump({'packageDirectories':[{'path':'force-app','default':True}],'namespace':'','sfdcLoginUrl':'https://login.salesforce.com','sourceApiVersion':'62.0'}, open('sfdx-project.json', 'w'), indent=2)"
-          fi
-          sf project list
-
       - name: Authenticate to Salesforce
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth_url.txt
@@ -154,7 +33,7 @@ jobs:
 
       - name: Deploy Source
         run: sf project deploy start --target-org staging-org --source-dir force-app --wait 10
-
+        
       - name: Assign Permission Set
         run: |
           output=$(sf org assign permset -n Apex_Recipes --target-org staging-org 2>&1) && {
@@ -168,34 +47,15 @@ jobs:
           fi
           exit 1
 
-      - name: Build Jataka Trigger Payload
-        env:
-          INSTALLATION_ID: ${{ secrets.JATAKA_INSTALLATION_ID }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.head_ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          TEST_MODE: ${{ needs.preflight.outputs.test_mode }}
-          IS_PILOT: ${{ needs.preflight.outputs.is_pilot }}
-        run: |
-          python3 - <<'PY' > payload.json
-          import json, os
-          print(json.dumps({
-              "installation_id": os.environ["INSTALLATION_ID"],
-              "repo_full_name": os.environ["REPO"],
-              "branch": os.environ["BRANCH"],
-              "pr_number": os.environ["PR_NUMBER"],
-              "test_mode": os.environ["TEST_MODE"],
-          }))
-          PY
-          echo "Built payload (test_mode=$TEST_MODE, branch=$BRANCH, pilot=$IS_PILOT)"
-
       - name: Trigger Jataka Kamikaze Pods
-        env:
-          JATAKA_API_URL: ${{ secrets.JATAKA_API_URL }}
-          JATAKA_API_KEY: ${{ secrets.JATAKA_API_KEY }}
         run: |
-          curl --fail-with-body --show-error \
-            -X POST "$JATAKA_API_URL/api/integrations/github/trigger" \
-            -H "Authorization: Bearer $JATAKA_API_KEY" \
+          curl --fail-with-body --show-error -X POST "${{ secrets.JATAKA_API_URL }}/api/integrations/github/trigger" \
+            -H "Authorization: Bearer ${{ secrets.JATAKA_API_KEY }}" \
             -H "Content-Type: application/json" \
-            --data @payload.json
+            -d '{
+              "installation_id": "${{ secrets.JATAKA_INSTALLATION_ID }}",
+              "repo_full_name": "${{ github.repository }}",
+              "branch": "${{ github.head_ref }}",
+              "pr_number": "${{ github.event.pull_request.number }}",
+              "test_mode": "${{ vars.JATAKA_TEST_MODE || 'auto' }}"
+            }'
