@@ -47,9 +47,29 @@ jobs:
           exit 1
 
       - name: Trigger Jataka Kamikaze Pods
+        env:
+          JATAKA_API_URL: ${{ secrets.JATAKA_API_URL }}
+          JATAKA_API_KEY: ${{ secrets.JATAKA_API_KEY }}
+          JATAKA_INSTALLATION_ID: ${{ secrets.JATAKA_INSTALLATION_ID }}
         run: |
-          curl --fail-with-body --show-error -X POST "${{ secrets.JATAKA_API_URL }}/api/integrations/github/trigger" \
-            -H "Authorization: Bearer ${{ secrets.JATAKA_API_KEY }}" \
+          # Secrets sometimes contain trailing whitespace/newlines or surrounding quotes.
+          # Sanitize before composing the final URL to avoid curl "Malformed input to a URL function".
+          API_URL="$(printf '%s' "$JATAKA_API_URL" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          API_URL="${API_URL%\"}"
+          API_URL="${API_URL#\"}"
+          API_URL="${API_URL%'}"
+          API_URL="${API_URL#'}"
+          API_URL="${API_URL%/}"
+
+          TARGET_URL="${API_URL}/api/integrations/github/trigger"
+
+          if ! printf '%s' "$TARGET_URL" | grep -Eq '^https?://'; then
+            echo "Invalid JATAKA_API_URL (must start with http(s)://)."
+            exit 1
+          fi
+
+          curl --fail-with-body --show-error -X POST "$TARGET_URL" \
+            -H "Authorization: Bearer $JATAKA_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{
               "installation_id": "${{ secrets.JATAKA_INSTALLATION_ID }}",
