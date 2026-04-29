@@ -1,7 +1,7 @@
 /**
  * AccountTrigger - Handles Account update operations
  * 
- * This trigger updates the primary contact's description when an Account
+ * This trigger updates the contact's description when an Account
  * is updated. Fully bulkified and follows best practices.
  */
 trigger AccountTrigger on Account (after update) {
@@ -17,7 +17,6 @@ trigger AccountTrigger on Account (after update) {
         SELECT Id, AccountId, Description
         FROM Contact
         WHERE AccountId IN :accountIds
-        AND IsPrimary__c = true
     ];
     
     // Process contacts in bulk

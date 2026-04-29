@@ -23,7 +23,6 @@ public with sharing class AccountTriggerHandler {
             SELECT Id, AccountId, Description
             FROM Contact
             WHERE AccountId IN :accountIds
-            AND IsPrimary__c = true
         ];
         
         // Process in bulk
