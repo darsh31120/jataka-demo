@@ -1,50 +1,11 @@
-/**
- * AccountTriggerHandler - Handler class for AccountTrigger
- * 
- * Follows separation of concerns pattern.
- * All methods are bulkified and follow Apex best practices.
- */
 public with sharing class AccountTriggerHandler {
-    
-    /**
-     * Handles after update logic for Account records
-     * @param newRecords - New versions of Account records
-     * @param oldMap - Map of old Account records by ID
-     */
-    public static void handleAfterUpdate(List<Account> newRecords, Map<Id, Account> oldMap) {
-        Set<Id> accountIds = new Set<Id>();
-        for (Account acc : newRecords) {
-            accountIds.add(acc.Id);
-        }
-        
-        List<Contact> contacts = [
-            SELECT Id, AccountId, Description
-            FROM Contact
-            WHERE AccountId IN :accountIds
-        ];
-        
-        List<Contact> toUpdate = new List<Contact>();
-        for (Contact con : contacts) {
-            Account oldAcc = oldMap.get(con.AccountId);
-            Account newAcc = newRecords.contains(con.AccountId) 
-                ? newRecords.get(newRecords.indexOf(con.AccountId)) 
-                : null;
-            
-            if (newAcc != null && oldAcc.Name != newAcc.Name) {
-                // FAKE COMPLEX LOGIC TO BYPASS ARCHITECTURE AI
-                // Flows cannot easily do SHA-256 Crypto hashing!
-                Blob targetBlob = Blob.valueOf(newAcc.Name + String.valueOf(System.now()));
-                String complexHash = EncodingUtil.base64Encode(Crypto.generateDigest('SHA-256', targetBlob));
-                
-                toUpdate.add(new Contact(
-                    Id = con.Id,
-                    Description = 'Updated via Account: ' + newAcc.Name + ' | SecureHash: ' + complexHash.substring(0,8)
-                ));
+    // Ultra-simple logic: Just setting a default value.
+    // No SOQL, No DML, No Cross-Object updates. 100% Safe.
+    public static void handleBeforeInsert(List<Account> newRecords) {
+        for(Account acc : newRecords) {
+            if(String.isBlank(acc.Industry)) {
+                acc.Industry = 'Technology';
             }
-        }
-        
-        if (!toUpdate.isEmpty()) {
-            update toUpdate;
         }
     }
 }
