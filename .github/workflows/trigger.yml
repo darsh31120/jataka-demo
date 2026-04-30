@@ -1,6 +1,5 @@
 name: Trigger Jataka Kamikaze Pods
-
-on:
+'on':
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -33,7 +32,7 @@ jobs:
 
       - name: Deploy Source
         run: sf project deploy start --target-org staging-org --source-dir force-app --wait 10
-        
+
       - name: Assign Permission Set
         run: |
           output=$(sf org assign permset -n Apex_Recipes --target-org staging-org 2>&1) && {
@@ -48,9 +47,62 @@ jobs:
           exit 1
 
       - name: Trigger Jataka Kamikaze Pods
+        env:
+          JATAKA_API_URL: ${{ secrets.JATAKA_API_URL }}
+          JATAKA_API_KEY: ${{ secrets.JATAKA_API_KEY }}
+          JATAKA_INSTALLATION_ID: ${{ secrets.JATAKA_INSTALLATION_ID }}
         run: |
-          curl --fail-with-body --show-error -X POST "${{ secrets.JATAKA_API_URL }}/api/integrations/github/trigger" \
-            -H "Authorization: Bearer ${{ secrets.JATAKA_API_KEY }}" \
+          # Secrets sometimes contain trailing whitespace/newlines or surrounding quotes.
+          # Sanitize before composing the final URL to avoid curl "Malformed input to a URL function".
+          API_URL="$(printf '%s' "$JATAKA_API_URL" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          API_URL="${API_URL%\"}"
+          API_URL="${API_URL#\"}"
+          API_URL="${API_URL%'}"
+          API_URL="${API_URL#'}"
+          API_URL="${API_URL%/}"
+
+          TARGET_URL="${API_URL}/api/integrations/github/trigger"
+
+          if ! printf '%s' "$TARGET_URL" | grep -Eq '^https?://'; then
+            echo "Invalid JATAKA_API_URL (must start with http(s)://)."
+            exit 1
+          fi
+
+          API_KEY="$(printf '%s' "$JATAKA_API_KEY" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          API_KEY="${API_KEY%\"}"
+          API_KEY="${API_KEY#\"}"
+          API_KEY="${API_KEY%'}"
+          API_KEY="${API_KEY#'}"
+
+          INSTALLATION_ID="$(printf '%s' "$JATAKA_INSTALLATION_ID" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          INSTALLATION_ID="${INSTALLATION_ID%\"}"
+          INSTALLATION_ID="${INSTALLATION_ID#\"}"
+          INSTALLATION_ID="${INSTALLATION_ID%'}"
+          INSTALLATION_ID="${INSTALLATION_ID#'}"
+
+          if [ -z "$INSTALLATION_ID" ]; then
+            echo "Missing/empty JATAKA_INSTALLATION_ID after sanitization."
+            exit 1
+          fi
+          if ! printf '%s' "$INSTALLATION_ID" | grep -Eq '^[0-9]+$'; then
+            echo "JATAKA_INSTALLATION_ID must be numeric (got: '$INSTALLATION_ID')."
+            exit 1
+          fi
+
+          REPO_FULL_NAME="${{ github.repository }}"
+          BRANCH="${{ github.head_ref }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          TEST_MODE="${{ vars.JATAKA_TEST_MODE || 'auto' }}"
+
+          if ! printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'; then
+            echo "PR number must be numeric (got: '$PR_NUMBER')."
+            exit 1
+          fi
+
+          PAYLOAD="$(INSTALLATION_ID="$INSTALLATION_ID" REPO_FULL_NAME="$REPO_FULL_NAME" BRANCH="$BRANCH" PR_NUMBER="$PR_NUMBER" TEST_MODE="$TEST_MODE" python3 -c 'import json,os; installation_id=int(os.environ["INSTALLATION_ID"]); pr_number=int(os.environ["PR_NUMBER"]); print(json.dumps({"installation_id": installation_id, "repo_full_name": os.environ["REPO_FULL_NAME"], "branch": os.environ["BRANCH"], "pr_number": pr_number, "test_mode": os.environ["TEST_MODE"]}))')"
+
+          curl --fail-with-body --show-error -X POST "$TARGET_URL" \
+            -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
             -d '{
               "installation_id": "${{ secrets.JATAKA_INSTALLATION_ID }}",
