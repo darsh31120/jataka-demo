@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Require_Industry</fullName>
+    <active>true</active>
+    <description>Forces the AI Healer to iteratively fix REST payloads by reading the schema to add the Industry field.</description>
+    <errorConditionFormula>ISBLANK(TEXT(Industry))</errorConditionFormula>
+    <errorMessage>KAMIKAZE TRAP: Industry is required for all new Accounts.</errorMessage>
+</ValidationRule>

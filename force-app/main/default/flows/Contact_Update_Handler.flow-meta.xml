@@ -1,33 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Contact Update Handler</fullName>
     <apiVersion>61.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
     <description>Hidden Flow that runs on Contact update - THE ICEBERG BELOW THE SURFACE</description>
     <label>Contact Update Handler</label>
     <processType>AutoLaunchedFlow</processType>
-    <triggerType>RecordAfterSave</triggerType>
-    <start>
-        <locationX>0</locationX>
-        <locationY>0</locationY>
-        <connector>
-            <targetReference>Get_Account_Details</targetReference>
-        </connector>
-        <filterFormula>True</filterFormula>
-        <object>Contact</object>
-        <triggerType>Update</triggerType>
-    </start>
-    
-    <!-- 
-        HIDDEN TRAP: This Flow runs every time a Contact is updated.
-        It performs 3 SOQL queries per transaction.
-        PMD CANNOT SEE THIS - it's metadata, not Apex code.
-        
-        When AccountTrigger updates 50 Contacts in bulk:
-        - 1 SOQL from AccountTrigger (bulkified)
-        - 50 × 3 = 150 SOQLs from this Flow (per-record execution)
-        - TOTAL: 151 SOQLs (LIMIT IS 100!)
-    -->
-    
     <recordLookups>
         <name>Get_Account_Details</name>
         <label>Get Account Details</label>
@@ -37,15 +14,40 @@
         <connector>
             <targetReference>Get_User_Details</targetReference>
         </connector>
-        <filterExpression>AccountId = $Record.AccountId</filterExpression>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.AccountId</elementReference>
+            </value>
+        </filters>
         <object>Account</object>
         <outputReference>AccountRecord</outputReference>
         <queriedFields>Id</queriedFields>
         <queriedFields>Name</queriedFields>
         <queriedFields>Industry</queriedFields>
-        <!-- SOQL #1 per Contact update -->
     </recordLookups>
-    
+    <recordLookups>
+        <name>Get_Opportunity_Count</name>
+        <label>Get Opportunity Count</label>
+        <locationX>300</locationX>
+        <locationY>100</locationY>
+        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>AccountId</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.AccountId</elementReference>
+            </value>
+        </filters>
+        <object>Opportunity</object>
+        <outputReference>OppRecords</outputReference>
+        <queriedFields>Id</queriedFields>
+        <queriedFields>StageName</queriedFields>
+        <queriedFields>Amount</queriedFields>
+    </recordLookups>
     <recordLookups>
         <name>Get_User_Details</name>
         <label>Get User Details</label>
@@ -55,46 +57,31 @@
         <connector>
             <targetReference>Get_Opportunity_Count</targetReference>
         </connector>
-        <filterExpression>AccountId = $Record.AccountId</filterExpression>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.OwnerId</elementReference>
+            </value>
+        </filters>
         <object>User</object>
         <outputReference>UserRecord</outputReference>
         <queriedFields>Id</queriedFields>
         <queriedFields>Name</queriedFields>
-        <!-- SOQL #2 per Contact update -->
     </recordLookups>
-    
-    <recordLookups>
-        <name>Get_Opportunity_Count</name>
-        <label>Get Opportunity Count</label>
-        <locationX>300</locationX>
-        <locationY>100</locationY>
-        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+    <start>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
         <connector>
-            <targetReference>Update_Contact_Flags</targetReference>
+            <targetReference>Get_Account_Details</targetReference>
         </connector>
-        <filterExpression>AccountId = $Record.AccountId</filterExpression>
-        <object>Opportunity</object>
-        <outputReference>OppRecords</outputReference>
-        <queriedFields>Id</queriedFields>
-        <queriedFields>StageName</queriedFields>
-        <queriedFields>Amount</queriedFields>
-        <!-- SOQL #3 per Contact update -->
-    </recordLookups>
-    
-    <recordUpdates>
-        <name>Update_Contact_Flags</name>
-        <label>Update Contact Flags</label>
-        <locationX>400</locationX>
-        <locationY>100</locationY>
-        <inputReference>$Record</inputReference>
-        <fieldUpdates>
-            <field>LastFlowRun__c</field>
-            <value>
-                <elementReference>$Flow.CurrentDateTime</elementReference>
-            </value>
-        </fieldUpdates>
-    </recordUpdates>
-    
+        <filterFormula>True</filterFormula>
+        <object>Contact</object>
+        <recordTriggerType>Update</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
     <variables>
         <name>AccountRecord</name>
         <dataType>SObject</dataType>
@@ -103,16 +90,6 @@
         <isOutput>false</isOutput>
         <objectType>Account</objectType>
     </variables>
-    
-    <variables>
-        <name>UserRecord</name>
-        <dataType>SObject</dataType>
-        <isCollection>false</isCollection>
-        <isInput>false</isInput>
-        <isOutput>false</isOutput>
-        <objectType>User</objectType>
-    </variables>
-    
     <variables>
         <name>OppRecords</name>
         <dataType>SObject</dataType>
@@ -121,6 +98,12 @@
         <isOutput>false</isOutput>
         <objectType>Opportunity</objectType>
     </variables>
-    
-    <status>Active</status>
+    <variables>
+        <name>UserRecord</name>
+        <dataType>SObject</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <objectType>User</objectType>
+    </variables>
 </Flow>
