@@ -2,7 +2,7 @@
 
 ## The Code Being Analyzed
 
-### AccountTrigger.trigger
+### AccountTrrigger.trigger
 ```apex
 trigger AccountTrigger on Account (after update) {
     // Single SOQL query - BULKIFIED
